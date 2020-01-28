@@ -93,6 +93,40 @@ class JSONBoundField(BoundField):
         return self.__class__(self._field, value, self.errors, self._prefix)
 
 
+class ListBoundField(BoundField):
+    """
+    This `BoundField` additionally implements __iter__ and __getitem__
+    in order to support returning bound fields from a `ListSerializer`.
+    """
+
+    def __init__(self, field, value, errors, prefix=''):
+        if value is None or value == '':
+            value = []
+        super().__init__(field, value, errors, prefix)
+
+    def __iter__(self):
+        for i in range(0, len(self.value)):
+            yield self[i]
+
+    def __getitem__(self, index):
+        field = self.child
+        value = self.value[index]
+        error = self.errors[index] if isinstance(self.errors, list) else None
+        prefix = self.name + '[' + str(index) + ']'  # what parse_html_list expects
+        if hasattr(field, 'fields'):
+            return NestedBoundField(field, value, error, prefix=prefix)
+        return BoundField(field, value, error, prefix=prefix)
+
+    def as_form_field(self):
+        values = []
+        for i, value in enumerate(self.value):
+            if isinstance(value, (list, dict)):
+                values[i] = value
+            else:
+                values[i] = '' if (value is None or value is False) else force_str(value)
+        return self.__class__(self._field, values, self.errors, self._prefix)
+
+
 class NestedBoundField(BoundField):
     """
     This `BoundField` additionally implements __iter__ and __getitem__
@@ -115,6 +149,8 @@ class NestedBoundField(BoundField):
         error = self.errors.get(key) if isinstance(self.errors, dict) else None
         if hasattr(field, 'fields'):
             return NestedBoundField(field, value, error, prefix=self.name + '.')
+        elif hasattr(field, 'child'):
+            return ListBoundField(field, value, error, prefix=self.name + '.')
         return BoundField(field, value, error, prefix=self.name + '.')
 
     def as_form_field(self):
